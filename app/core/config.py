@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     CHROMA_PERSIST_DIR: str = str(BASE_DIR / "data" / "chroma")
     DOCUMENTS_DIR: str = str(BASE_DIR / "data" / "documents")
+    CHAT_HISTORY_DIR: str = str(BASE_DIR / "data" / "chat_history")
 
     CHUNK_SIZE: int = 500
     CHUNK_OVERLAP: int = 50

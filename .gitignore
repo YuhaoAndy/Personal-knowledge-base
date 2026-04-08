@@ -33,6 +33,9 @@ ENV/
 # 数据目录（包含向量数据，不要提交到仓库）
 data/chroma/
 data/documents/
+data/chat_history/
+
+
 
 # IDE
 .idea/
