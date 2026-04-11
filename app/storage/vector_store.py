@@ -6,7 +6,7 @@ from langchain_community.embeddings import SentenceTransformerEmbeddings
 from app.core.config import settings
 
 embedding_fn = SentenceTransformerEmbeddings(
-    model_name="BAAI/bge-small-zh-v1.5"
+    model_name=settings.EMBEDDING_MODEL
 )
 
 def get_vector_store():

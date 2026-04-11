@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 500
     CHUNK_OVERLAP: int = 50
 
+    # 会话历史裁剪配置：限制发送给LLM的历史长度，避免无限增长
+    MAX_HISTORY_MESSAGES_FOR_LLM: int = 12
+    MAX_HISTORY_CHARS_FOR_LLM: int = 4000
+
     class Config:
         env_file = ".env"
         extra = "allow"

@@ -1,10 +1,10 @@
-import os
-os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+import os 
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"    # 配置 HuggingFace 镜像
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from app.core.config import settings
-from app.api.documents import router as documents_router
+from fastapi.middleware.cors import CORSMiddleware  #跨域中间件
+from app.core.config import settings   #导入配置文件的settings类
+from app.api.documents import router as documents_router 
 from app.api.chat import router as chat_router
 import fastapi_cdn_host
 

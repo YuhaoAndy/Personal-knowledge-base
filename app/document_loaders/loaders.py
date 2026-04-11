@@ -1,6 +1,6 @@
-from pathlib import Path
-from typing import List
-from langchain_core.documents import Document
+from pathlib import Path # 导入Path类，用于处理文件路径
+from typing import List # 导入List类型，用于返回文档列表
+from langchain_core.documents import Document # 导入Document类，用于表示文档对象
 from langchain_community.document_loaders import (
     PyPDFLoader,
     TextLoader,

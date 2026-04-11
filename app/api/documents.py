@@ -80,6 +80,13 @@ async def delete_document(file_id: str):
         results = vector_store.get(where={"file_id": file_id})
         if results["ids"]:
             vector_store.delete(ids=results["ids"])
+
+        # 同步删除本地源文件，文件命名格式为 {file_id}.{ext}
+        documents_dir = Path(settings.DOCUMENTS_DIR)
+        for file_path in documents_dir.glob(f"{file_id}.*"):
+            if file_path.is_file():
+                file_path.unlink()
+
         return {"message": "删除成功"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
