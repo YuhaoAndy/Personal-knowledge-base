@@ -6,7 +6,7 @@ from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_community.chat_message_histories import FileChatMessageHistory
 
-from app.chains.rag_chain import answer_with_rag
+from app.chains.rag_chain import build_rag_with_history_runnable
 from app.core.config import settings
 
 router = APIRouter(prefix="/api/chat", tags=["对话"])
@@ -28,14 +28,19 @@ def get_session_history(session_id: str) -> BaseChatMessageHistory:
     return FileChatMessageHistory(file_path)
 
 
+rag_with_history = build_rag_with_history_runnable(get_session_history)
+
+
 @router.post("/send", response_model=ChatResponse)
 async def send_message(request: ChatRequest):
     try:
-        history = get_session_history(request.session_id)
-        answer, sources = answer_with_rag(request.message, history.messages)
+        result = rag_with_history.invoke(
+            {"question": request.message},
+            config={"configurable": {"session_id": request.session_id}},
+        )
 
-        history.add_user_message(request.message)
-        history.add_ai_message(answer)
+        answer = str(result.get("answer", ""))
+        sources = result.get("sources", [])
 
         return ChatResponse(
             answer=answer,

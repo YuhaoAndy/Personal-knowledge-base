@@ -81,6 +81,7 @@
 | DELETE | `/api/chat/clear` | 清除对话历史 |
 
 > 实现方式：使用 `RunnableWithMessageHistory` + `BaseChatMessageHistory`
+> 当前落地：`FileChatMessageHistory`（`BaseChatMessageHistory` 实现）+ `RunnableWithMessageHistory` 自动注入/回写历史
 
 ---
 
@@ -113,7 +114,7 @@
 
 | 序号 | 模块 | 功能 | 关键组件 |
 |------|------|------|----------|
-| 1 | 文档解析加载器 | 解析 PDF/Word/MD/TXT | PyPDFLoader, TextLoader, UnstructuredWordDocumentLoader, MarkdownLoader |
+| 1 | 文档解析加载器 | 解析 PDF/Word/MD/TXT | PyPDFLoader, TextLoader, UnstructuredWordDocumentLoader |
 | 2 | 文本分块处理 | 拆分长文档为小块 | RecursiveCharacterTextSplitter |
 | 3 | Embedding 模型 | 文本向量化 | SentenceTransformerEmbeddingFunction |
 | 4 | ChromaDB 向量存储 | 存储和检索向量 | Chroma |
@@ -133,7 +134,7 @@
 2. 文档解析（根据文件类型选择 Loader）
    ├── .pdf  → PyPDFLoader
    ├── .docx → UnstructuredWordDocumentLoader
-   ├── .md   → MarkdownLoader
+    ├── .md   → TextLoader
    └── .txt  → TextLoader
    → 读取文本内容，返回 Document 对象
     │
@@ -168,9 +169,9 @@ from langchain_community.document_loaders import MarkdownLoader
 
 **③ Embedding 模型**
 ```python
-from chromadb.utils import embedding_functions
+from langchain_community.embeddings import SentenceTransformerEmbeddings
 
-embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+embedding_fn = SentenceTransformerEmbeddings(
     model_name="BAAI/bge-small-zh-v1.5"
 )
 ```
@@ -194,11 +195,11 @@ markdown
 
 ---
 
-### Phase 3: RAG 对话实现
-- [ ] LangChain RAG 链构建
-- [ ] DeepSeek API 集成
-- [ ] 对话 API 实现（带记忆）
-- [ ] 引用来源功能
+### Phase 3: RAG 对话实现 ✅ 已完成
+- [x] LangChain RAG 链构建
+- [x] DeepSeek API 集成
+- [x] 对话 API 实现（带记忆）
+- [x] 引用来源功能
 
 ### Phase 4: 完善与优化
 - [ ] 错误处理与日志

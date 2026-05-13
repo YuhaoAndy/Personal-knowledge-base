@@ -1,38 +1,47 @@
-from typing import List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from langchain_core.documents import Document
+from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables import RunnableLambda
+from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_openai import ChatOpenAI
 from app.core.config import settings
 from app.storage.vector_store import get_retriever
 
-MAX_HISTORY_QUESTIONS_FOR_RETRIEVAL = 3
+MAX_HISTORY_QUESTIONS_FOR_RETRIEVAL = 3 
+# 在构建检索查询时，最多包含最近的3个用户问题，
+# 以提供足够的上下文信息，同时避免过长的查询文本影响检索效率
 
 llm = ChatOpenAI(
     model=settings.DEEPSEEK_MODEL,
     api_key=settings.DEEPSEEK_API_KEY,
     base_url=settings.DEEPSEEK_BASE_URL,
-    temperature=0.7
+    temperature=0.7 
 )
 
-PROMPT_TEMPLATE = """你是一个知识库问答助手。请根据以下参考文档回答用户的问题。
+SYSTEM_PROMPT = (
+    "你是一个知识库问答助手。请根据以下参考文档回答用户的问题。\n\n"
+    "参考文档：\n{context}\n\n"
+    "回答要求：\n"
+    "1. 如果参考文档中有相关信息，请基于文档内容回答\n"
+    "2. 如果参考文档中没有相关信息，请使用你的通用知识回答\n"
+    "3. 回答要简洁、准确"
+)
 
-参考文档：
-{context}
 
-用户问题：{question}
-
-回答要求：
-1. 如果参考文档中有相关信息，请基于文档内容回答"
-2. 如果参考文档中没有相关信息，请使用你的通用知识回答"
-3. 回答要简洁、准确"""
+prompt_template = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        SYSTEM_PROMPT,
+    ),
+    MessagesPlaceholder("chat_history"), # 占位符，用于插入会话历史消息
+    ("human", "{question}"),
+])
 
 
 def format_docs(docs: List[Document]) -> str:
     return "\n\n".join(doc.page_content for doc in docs)
-
-
-def build_prompt(question: str, context: str) -> str:
-    return PROMPT_TEMPLATE.format(context=context, question=question)
 
 
 def get_recent_user_questions(history_messages: Optional[List[BaseMessage]], limit: int = MAX_HISTORY_QUESTIONS_FOR_RETRIEVAL) -> List[str]:
@@ -115,13 +124,70 @@ def trim_history_for_llm(history_messages: Optional[List[BaseMessage]]) -> List[
 
 
 def answer_with_rag(question: str, history_messages: Optional[List[BaseMessage]] = None) -> Tuple[str, List[dict]]:
+    result = run_rag_payload({
+        "question": question,
+        "chat_history": history_messages or [],
+    })
+    return str(result.get("answer", "")), result.get("sources", [])
+
+
+def build_context_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    question = str(payload.get("question", "")).strip()
+    history_messages = payload.get("chat_history", [])
+
     docs = retrieve_documents(question, history_messages)
-    context = format_docs(docs)
-    prompt = build_prompt(question, context)
+    return {
+        "question": question,
+        "chat_history": trim_history_for_llm(history_messages),
+        "docs": docs,
+        "context": format_docs(docs),
+    }
 
-    messages: List[BaseMessage] = trim_history_for_llm(history_messages)
-    messages.append(HumanMessage(content=prompt))
 
-    response = llm.invoke(messages)
+def build_llm_messages(payload: Dict[str, Any]) -> Dict[str, Any]:
+    messages: List[BaseMessage] = prompt_template.format_messages(
+        context=payload["context"],
+        question=payload["question"],
+        chat_history=payload["chat_history"],
+    )
+    return {
+        "messages": messages,
+        "docs": payload["docs"],
+    }
+
+
+def invoke_llm_and_build_result(payload: Dict[str, Any]) -> Dict[str, Any]:
+    response = llm.invoke(payload["messages"])
     answer = response.content if isinstance(response.content, str) else str(response.content)
-    return answer, build_sources(docs)
+    return {
+        "answer": answer,
+        "sources": build_sources(payload["docs"]),
+    }
+
+
+base_chain = (
+    RunnableLambda(build_context_payload)
+    | RunnableLambda(build_llm_messages)
+    | RunnableLambda(invoke_llm_and_build_result)
+)
+
+
+def run_rag_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    normalized_payload = {
+        "question": str(payload.get("question", "")).strip(),
+        "chat_history": payload.get("chat_history", payload.get("history", [])),
+    }
+
+    return base_chain.invoke(normalized_payload)
+
+
+def build_rag_with_history_runnable(
+    get_session_history: Callable[[str], BaseChatMessageHistory]
+) -> RunnableWithMessageHistory:
+    return RunnableWithMessageHistory(
+        base_chain,
+        get_session_history,
+        input_messages_key="question",
+        history_messages_key="chat_history",
+        output_messages_key="answer",
+    )

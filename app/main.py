@@ -4,8 +4,7 @@ os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"    # 配置 HuggingFace 镜�
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware  #跨域中间件
 from app.core.config import settings   #导入配置文件的settings类
-from app.api.documents import router as documents_router 
-from app.api.chat import router as chat_router
+from app.api import chat,documents   #导入chat和documents模块的路由
 import fastapi_cdn_host
 
 app = FastAPI(
@@ -24,8 +23,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(documents_router)
-app.include_router(chat_router)
+app.include_router(documents.router)
+app.include_router(chat.router)
 
 
 @app.get("/health")

@@ -22,6 +22,7 @@ def get_loader_for_file(file_path: str) -> any:
     else:
         raise ValueError(f"Unsupported file type: {suffix}")
 
-def load_document(file_path: str) -> List[Document]:
+def load_document(file_path: str) -> List[Document]: 
     loader = get_loader_for_file(file_path)
-    return loader.load()
+    return loader.load() 
+#返回一个Document对象列表，每个Document对象包含文档的内容和元数据
