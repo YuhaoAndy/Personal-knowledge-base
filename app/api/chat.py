@@ -1,25 +1,15 @@
 import os
-from typing import List, Optional
+from typing import Optional
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_community.chat_message_histories import FileChatMessageHistory
 
 from app.chains.rag_chain import build_rag_with_history_runnable
 from app.core.config import settings
+from app.schemas.chat import ChatRequest, ChatResponse
 
 router = APIRouter(prefix="/api/chat", tags=["对话"])
-
-
-class ChatRequest(BaseModel):
-    message: str
-    session_id: Optional[str] = "default"
-
-
-class ChatResponse(BaseModel):
-    answer: str
-    sources: List[dict]
 
 
 def get_session_history(session_id: str) -> BaseChatMessageHistory:

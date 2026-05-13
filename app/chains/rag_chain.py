@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 from langchain_core.documents import Document
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.messages import BaseMessage, HumanMessage
@@ -9,15 +9,21 @@ from langchain_openai import ChatOpenAI
 from app.core.config import settings
 from app.storage.vector_store import get_retriever
 
-MAX_HISTORY_QUESTIONS_FOR_RETRIEVAL = 3 
-# 在构建检索查询时，最多包含最近的3个用户问题，
-# 以提供足够的上下文信息，同时避免过长的查询文本影响检索效率
+# 执行顺序（先看这 5 行）：
+# 1) 用户问题进入 rag_processing_chain
+# 2) prepare_chain_payload: 检索文档并构建 context
+# 3) render_prompt_messages: 渲染 system/history/human 消息
+# 4) generate_answer_with_sources: 调用 LLM，产出 answer + sources
+# 5) build_rag_with_history_runnable: 负责会话历史自动注入与回写
+
+MAX_HISTORY_QUESTIONS_FOR_RETRIEVAL = 3
+# 在构建检索查询时，最多包含最近 3 个用户问题，平衡上下文与检索效率。
 
 llm = ChatOpenAI(
     model=settings.DEEPSEEK_MODEL,
     api_key=settings.DEEPSEEK_API_KEY,
     base_url=settings.DEEPSEEK_BASE_URL,
-    temperature=0.7 
+    temperature=0.7
 )
 
 SYSTEM_PROMPT = (
@@ -30,16 +36,17 @@ SYSTEM_PROMPT = (
 )
 
 
-prompt_template = ChatPromptTemplate.from_messages([
+rag_prompt_template = ChatPromptTemplate.from_messages([
     (
         "system",
         SYSTEM_PROMPT,
     ),
-    MessagesPlaceholder("chat_history"), # 占位符，用于插入会话历史消息
+    MessagesPlaceholder("chat_history"),
     ("human", "{question}"),
 ])
 
 
+"""检索相关函数"""
 def format_docs(docs: List[Document]) -> str:
     return "\n\n".join(doc.page_content for doc in docs)
 
@@ -76,12 +83,16 @@ def build_retrieval_query(question: str, history_messages: Optional[List[BaseMes
     )
 
 
+#到向量库寻找相关片段
+# 构建检索查询时，包含当前问题和最近的几个用户问题
+# 帮助向量库理解检索意图，提升相关性。
 def retrieve_documents(question: str, history_messages: Optional[List[BaseMessage]] = None) -> List[Document]:
     retriever = get_retriever()
     retrieval_query = build_retrieval_query(question, history_messages)
     return retriever.invoke(retrieval_query)
 
 
+"""输出构建与历史裁剪函数"""
 def build_sources(docs: List[Document]) -> List[dict]:
     sources = []
     for doc in docs:
@@ -123,15 +134,8 @@ def trim_history_for_llm(history_messages: Optional[List[BaseMessage]]) -> List[
     return selected_reversed
 
 
-def answer_with_rag(question: str, history_messages: Optional[List[BaseMessage]] = None) -> Tuple[str, List[dict]]:
-    result = run_rag_payload({
-        "question": question,
-        "chat_history": history_messages or [],
-    })
-    return str(result.get("answer", "")), result.get("sources", [])
-
-
-def build_context_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+"""主链路 1/3 准备检索与提示词上下文"""
+def prepare_chain_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     question = str(payload.get("question", "")).strip()
     history_messages = payload.get("chat_history", [])
 
@@ -144,8 +148,9 @@ def build_context_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_llm_messages(payload: Dict[str, Any]) -> Dict[str, Any]:
-    messages: List[BaseMessage] = prompt_template.format_messages(
+"""主链路 2/3 渲染发给模型的消息列表"""
+def render_prompt_messages(payload: Dict[str, Any]) -> Dict[str, Any]:
+    messages: List[BaseMessage] = rag_prompt_template.format_messages(
         context=payload["context"],
         question=payload["question"],
         chat_history=payload["chat_history"],
@@ -156,7 +161,8 @@ def build_llm_messages(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def invoke_llm_and_build_result(payload: Dict[str, Any]) -> Dict[str, Any]:
+"""主链路 3/3 调用模型并构建标准输出"""
+def generate_answer_with_sources(payload: Dict[str, Any]) -> Dict[str, Any]:
     response = llm.invoke(payload["messages"])
     answer = response.content if isinstance(response.content, str) else str(response.content)
     return {
@@ -165,27 +171,19 @@ def invoke_llm_and_build_result(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-base_chain = (
-    RunnableLambda(build_context_payload)
-    | RunnableLambda(build_llm_messages)
-    | RunnableLambda(invoke_llm_and_build_result)
+rag_processing_chain = (
+    RunnableLambda(prepare_chain_payload)  
+    # 输入原始问题和会话历史，输出包含检索到的文档和构建好的提示词上下文的payload
+    | RunnableLambda(render_prompt_messages)
+    | RunnableLambda(generate_answer_with_sources)
 )
-
-
-def run_rag_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    normalized_payload = {
-        "question": str(payload.get("question", "")).strip(),
-        "chat_history": payload.get("chat_history", payload.get("history", [])),
-    }
-
-    return base_chain.invoke(normalized_payload)
 
 
 def build_rag_with_history_runnable(
     get_session_history: Callable[[str], BaseChatMessageHistory]
 ) -> RunnableWithMessageHistory:
     return RunnableWithMessageHistory(
-        base_chain,
+        rag_processing_chain,
         get_session_history,
         input_messages_key="question",
         history_messages_key="chat_history",
