@@ -167,10 +167,4 @@ personal-knowledge-base/
 | `MAX_HISTORY_MESSAGES_FOR_LLM` | 历史消息最大条数 | 12 |
 | `MAX_HISTORY_CHARS_FOR_LLM` | 历史消息最大字符数 | 4000 |
 
-## 开发计划
-
-- [x] Phase 1：基础框架搭建
-- [x] Phase 2：文档管理核心
-- [x] Phase 3：RAG 对话实现
-- [ ] Phase 4：检索质量优化（重排、过滤）
-- [ ] Phase 5：工程化提升（测试、日志、安全）
+ee
