@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 500 # 文档分块大小 每块包含500个字符
     CHUNK_OVERLAP: int = 50 # 文档分块重叠部分，避免信息丢失 每块与前一块重叠50个字符
 
+    # Query Rewrite 配置
+    REWRITE_TEMPERATURE: float = 0.3
+    REWRITE_ENABLED: bool = True
+
     # 会话历史裁剪配置：限制发送给LLM的历史长度，避免无限增长
     MAX_HISTORY_MESSAGES_FOR_LLM: int = 12
     MAX_HISTORY_CHARS_FOR_LLM: int = 4000

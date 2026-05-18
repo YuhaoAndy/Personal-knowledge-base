@@ -26,6 +26,13 @@ llm = ChatOpenAI(
     temperature=0.7
 )
 
+rewrite_llm = ChatOpenAI(
+    model=settings.DEEPSEEK_MODEL,
+    api_key=settings.DEEPSEEK_API_KEY,
+    base_url=settings.DEEPSEEK_BASE_URL,
+    temperature=settings.REWRITE_TEMPERATURE
+)
+
 SYSTEM_PROMPT = (
     "你是一个知识库问答助手。请根据以下参考文档回答用户的问题。\n\n"
     "参考文档：\n{context}\n\n"
@@ -83,12 +90,56 @@ def build_retrieval_query(question: str, history_messages: Optional[List[BaseMes
     )
 
 
+QUERY_REWRITE_PROMPT = (
+    "你是一个查询改写助手。你的任务是将用户的问题改写成更适合向量检索的形式。\n\n"
+    "改写规则：\n"
+    "1. 如果用户的问题是独立的（没有对话历史），直接输出原问题，不要做任何修改\n"
+    "2. 如果用户的问题是追问（如\"它是什么？\"\"它的原理？\"），结合对话历史将指代消解，\n"
+    "   生成一个包含完整上下文的独立查询\n"
+    "3. 保持原问题的核心意图不变，不要添加不存在的信息\n"
+    "4. 直接输出改写后的查询，不要加任何解释或前缀\n\n"
+    "对话历史：\n{chat_history}\n\n"
+    "当前问题：{question}\n\n"
+    "改写后的查询："
+)
+
+
+def rewrite_query(question: str, history_messages: Optional[List[BaseMessage]] = None) -> str:
+    if not settings.REWRITE_ENABLED:
+        return question.strip()
+
+    recent_questions = get_recent_user_questions(history_messages)
+
+    if not recent_questions:
+        return question.strip()
+
+    chat_history_str = "\n".join(f"用户：{q}" for q in recent_questions)
+
+    messages = [
+        ("system", QUERY_REWRITE_PROMPT.format(
+            chat_history=chat_history_str,
+            question=question.strip()
+        ))
+    ]
+
+    prompt = ChatPromptTemplate.from_messages(messages)
+    chain = prompt | rewrite_llm
+    response = chain.invoke({})
+    rewritten = response.content.strip()
+
+    if not rewritten:
+        return question.strip()
+
+    return rewritten
+
+
 #到向量库寻找相关片段
 # 构建检索查询时，包含当前问题和最近的几个用户问题
 # 帮助向量库理解检索意图，提升相关性。
 def retrieve_documents(question: str, history_messages: Optional[List[BaseMessage]] = None) -> List[Document]:
     retriever = get_retriever()
-    retrieval_query = build_retrieval_query(question, history_messages)
+    rewritten_query = rewrite_query(question, history_messages)
+    retrieval_query = build_retrieval_query(rewritten_query, history_messages)
     return retriever.invoke(retrieval_query)
 
 
